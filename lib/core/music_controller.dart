@@ -66,6 +66,20 @@ class MusicController {
     }
   }
 
+  Future<bool> setPlaybackSpeed(double speed) async {
+    try {
+      await platform.invokeMethod('setPlaybackSpeed', {'speed': speed});
+      debugPrint('🎚️ Playback speed: $speed');
+      return true;
+    } on MissingPluginException {
+      debugPrint('⚠️ setPlaybackSpeed not implemented on platform');
+      return false;
+    } catch (e) {
+      debugPrint('❌ Error setting playback speed: $e');
+      return false;
+    }
+  }
+
   Stream<Map<String, dynamic>> get onMusicInfoChanged {
     return const EventChannel(
       'com.yourapp/music_events',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:music_app/screens/music/music_screen.dart';
+import 'package:music_app/screens/music/provider/music_provider.dart';
 
 void main() {
   runApp(const ProviderScope(child: MyApp()));
@@ -41,34 +42,45 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Music Player'),
-      ),
-      body: _pages[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.music_note),
-            label: 'Player',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.library_music),
-            label: 'Library',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
-      ),
+    return Consumer(
+      builder: (context, ref, _) {
+        final showAppBar = _selectedIndex == 0 ? ref.watch(appBarVisibleProvider) : true;
+        final showBottomNav = _selectedIndex == 0 ? ref.watch(bottomNavVisibleProvider) : true;
+
+        return Scaffold(
+          appBar: showAppBar
+              ? AppBar(
+                  backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+                  title: const Text('Music Player'),
+                )
+              : null,
+          body: _pages[_selectedIndex],
+          bottomNavigationBar: showBottomNav
+              ? BottomNavigationBar(
+                  currentIndex: _selectedIndex,
+                  onTap: (index) {
+                    setState(() {
+                      _selectedIndex = index;
+                    });
+                  },
+                  items: const [
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.music_note),
+                      label: 'Player',
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.library_music),
+                      label: 'Library',
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.settings),
+                      label: 'Settings',
+                    ),
+                  ],
+                )
+              : null,
+        );
+      },
     );
   }
 }

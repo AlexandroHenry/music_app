@@ -11,6 +11,9 @@ import 'package:music_app/screens/music/provider/music_state.dart';
 final musicControllerProvider = Provider<MusicController>((ref) => MusicController());
 final musicPermissionHandlerProvider = Provider<MusicPermissionHandler>((ref) => MusicPermissionHandler());
 
+final appBarVisibleProvider = StateProvider<bool>((ref) => true);
+final bottomNavVisibleProvider = StateProvider<bool>((ref) => true);
+
 final musicStateProvider = StateNotifierProvider<MusicStateNotifier, MusicState>(
   (ref) => MusicStateNotifier(ref.read(musicControllerProvider)),
 );
@@ -94,6 +97,16 @@ class MusicStateNotifier extends StateNotifier<MusicState> {
   Future<void> seek(double seconds) async {
     if (_isDisposed) return;
     await _controller.seek(seconds);
+  }
+
+  Future<bool> setPlaybackSpeed(double speed) async {
+    if (_isDisposed) return false;
+
+    final success = await _controller.setPlaybackSpeed(speed);
+    if (!_isDisposed && success) {
+      state = state.copyWith(playbackSpeed: speed);
+    }
+    return success;
   }
 
   Future<void> _loadCurrentTrack({bool forceImageUpdate = false}) async {

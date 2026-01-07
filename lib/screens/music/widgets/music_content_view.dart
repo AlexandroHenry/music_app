@@ -15,6 +15,8 @@ class MusicContentView extends StatelessWidget {
     required this.onNext,
     required this.onPrevious,
     required this.onRefresh,
+    required this.playbackSpeed,
+    required this.onPlaybackSpeedSelected,
     required this.showPermissionAction,
     this.onPermissionSettings,
   });
@@ -26,6 +28,8 @@ class MusicContentView extends StatelessWidget {
   final VoidCallback onNext;
   final VoidCallback onPrevious;
   final VoidCallback onRefresh;
+  final double playbackSpeed;
+  final ValueChanged<double> onPlaybackSpeedSelected;
   final bool showPermissionAction;
   final VoidCallback? onPermissionSettings;
 
@@ -37,7 +41,15 @@ class MusicContentView extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 20),
-            _AlbumArt(thumbnail: state.cachedThumbnail),
+            _AlbumArt(
+              thumbnail: state.cachedThumbnail,
+              currentTime: (state.currentTrack!['currentTime'] as num?)?.toDouble() ?? 0.0,
+              duration: (state.currentTrack!['duration'] as num?)?.toDouble() ?? 0.0,
+              onSeek: onSeek,
+              onSeekEnd: onSeekEnd,
+              onNext: onNext,
+              onPrevious: onPrevious,
+            ),
             const SizedBox(height: 32),
             _TrackInfo(track: state.currentTrack!),
             const SizedBox(height: 24),
@@ -52,6 +64,11 @@ class MusicContentView extends StatelessWidget {
               onPrevious: onPrevious,
               onPlayPause: onPlayPause,
               onNext: onNext,
+            ),
+            const SizedBox(height: 20),
+            _PlaybackSpeedSelector(
+              currentSpeed: playbackSpeed,
+              onSpeedSelected: onPlaybackSpeedSelected,
             ),
             const SizedBox(height: 16),
             TextButton.icon(
@@ -79,10 +96,36 @@ class MusicContentView extends StatelessWidget {
   }
 }
 
-class _AlbumArt extends StatelessWidget {
-  const _AlbumArt({required this.thumbnail});
+class _AlbumArt extends StatefulWidget {
+  const _AlbumArt({
+    required this.thumbnail,
+    required this.currentTime,
+    required this.duration,
+    required this.onSeek,
+    required this.onSeekEnd,
+    required this.onNext,
+    required this.onPrevious,
+  });
 
   final Uint8List? thumbnail;
+  final double currentTime;
+  final double duration;
+  final ValueChanged<double> onSeek;
+  final VoidCallback onSeekEnd;
+  final VoidCallback onNext;
+  final VoidCallback onPrevious;
+
+  @override
+  State<_AlbumArt> createState() => _AlbumArtState();
+}
+
+class _AlbumArtState extends State<_AlbumArt> {
+  static const double _dragSeekFactor = 0.2;
+  static const double _skipThreshold = 120.0;
+
+  double _dragDelta = 0.0;
+  double _startTime = 0.0;
+  bool _skipTriggered = false;
 
   @override
   Widget build(BuildContext context) {
@@ -101,7 +144,40 @@ class _AlbumArt extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: _ThumbnailImage(thumbnail: thumbnail),
+        child: GestureDetector(
+          onPanStart: (_) {
+            _dragDelta = 0.0;
+            _startTime = widget.currentTime;
+            _skipTriggered = false;
+          },
+          onPanUpdate: (details) {
+            _dragDelta += details.delta.dx;
+
+            if (_skipTriggered) {
+              return;
+            }
+
+            if (_dragDelta.abs() >= _skipThreshold) {
+              _skipTriggered = true;
+              if (_dragDelta > 0) {
+                widget.onNext();
+              } else {
+                widget.onPrevious();
+              }
+              return;
+            }
+
+            final deltaSeconds = _dragDelta * _dragSeekFactor;
+            final target = (_startTime + deltaSeconds).clamp(0.0, widget.duration > 0 ? widget.duration : 0.0);
+            widget.onSeek(target);
+          },
+          onPanEnd: (_) {
+            if (!_skipTriggered) {
+              widget.onSeekEnd();
+            }
+          },
+          child: _ThumbnailImage(thumbnail: widget.thumbnail),
+        ),
       ),
     );
   }
@@ -273,6 +349,39 @@ class _ControlButtons extends StatelessWidget {
           icon: const Icon(Icons.skip_next),
           iconSize: 48,
           onPressed: onNext,
+        ),
+      ],
+    );
+  }
+}
+
+class _PlaybackSpeedSelector extends StatelessWidget {
+  const _PlaybackSpeedSelector({
+    required this.currentSpeed,
+    required this.onSpeedSelected,
+  });
+
+  final double currentSpeed;
+  final ValueChanged<double> onSpeedSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
+    return Column(
+      children: [
+        Text('배속 재생', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final speed in speeds)
+              ChoiceChip(
+                label: Text('${speed}x'),
+                selected: currentSpeed == speed,
+                onSelected: (_) => onSpeedSelected(speed),
+              ),
+          ],
         ),
       ],
     );

@@ -69,6 +69,13 @@ import MediaPlayer
             } else {
                 result(FlutterError(code: "INVALID_ARGUMENT", message: "Invalid seek argument", details: nil))
             }
+        case "setPlaybackSpeed":
+            if let args = call.arguments as? [String: Any],
+               let speed = args["speed"] as? Double {
+                setPlaybackSpeed(speed: speed, result: result)
+            } else {
+                result(FlutterError(code: "INVALID_ARGUMENT", message: "Invalid speed argument", details: nil))
+            }
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -217,6 +224,21 @@ import MediaPlayer
         let musicPlayer = MPMusicPlayerController.systemMusicPlayer
         musicPlayer.currentPlaybackTime = seconds
         result(nil)
+    }
+
+    private func setPlaybackSpeed(speed: Double, result: @escaping FlutterResult) {
+        let musicPlayer = MPMusicPlayerController.systemMusicPlayer
+        musicPlayer.currentPlaybackRate = Float(speed)
+
+        var nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = speed
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.sendMusicInfoToFlutter()
+        }
+
+        result(true)
     }
     
     private func setupNowPlayingObserver() {
