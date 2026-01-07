@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -76,38 +75,5 @@ class MusicController {
     });
   }
 
-  // Android 전용 메서드
-  Future<bool> checkNotificationPermission() async {
-    if (!Platform.isAndroid) {
-      return true; // iOS는 권한 체크 불필요
-    }
-
-    try {
-      final result = await platform.invokeMethod('checkNotificationPermission');
-      debugPrint('🔐 Notification permission: ${result as bool}');
-      return result as bool;
-    } catch (e) {
-      debugPrint('❌ Error checking notification permission: $e');
-      return false;
-    }
-  }
-
-  Future<void> requestNotificationPermission() async {
-    if (!Platform.isAndroid) {
-      return; // iOS는 권한 요청 불필요
-    }
-
-    try {
-      await platform.invokeMethod('requestNotificationPermission');
-      debugPrint('📲 Requesting notification permission');
-    } catch (e) {
-      debugPrint('❌ Error requesting notification permission: $e');
-    }
-  }
-
-  // 플랫폼 체크 헬퍼
-  bool get isAndroid => Platform.isAndroid;
-  bool get isIOS => Platform.isIOS;
-
-  String get platformName => Platform.isAndroid ? 'Android' : 'iOS';
+  // Platform-specific permission handling moved to MusicPermissionHandler.
 }

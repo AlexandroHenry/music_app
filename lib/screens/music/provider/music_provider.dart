@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:music_app/core/music_controller.dart';
+import 'package:music_app/core/platform/music_permission_handler.dart';
 import 'package:music_app/screens/music/provider/music_state.dart';
 
 final musicControllerProvider = Provider<MusicController>((ref) => MusicController());
+final musicPermissionHandlerProvider = Provider<MusicPermissionHandler>((ref) => MusicPermissionHandler());
 
 final musicStateProvider = StateNotifierProvider<MusicStateNotifier, MusicState>(
   (ref) => MusicStateNotifier(ref.read(musicControllerProvider)),
