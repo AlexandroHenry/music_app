@@ -22,9 +22,11 @@ class MusicStateNotifier extends StateNotifier<MusicState> {
   final MusicController _controller;
   Timer? _updateTimer;
   StreamSubscription? _musicSubscription;
+  bool _isDisposed = false; // 추가
 
-  // 초기화를 비동기로 처리
   Future<void> _initialize() async {
+    if (_isDisposed) return; // 체크 추가
+    
     await _loadCurrentTrack(forceImageUpdate: true);
     _listenToMusicChanges();
     _startPeriodicUpdate();
@@ -33,6 +35,11 @@ class MusicStateNotifier extends StateNotifier<MusicState> {
   void _startPeriodicUpdate() {
     _updateTimer?.cancel();
     _updateTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_isDisposed) {
+        timer.cancel();
+        return;
+      }
+      
       if (state.currentTrack != null && state.currentTrack!['isPlaying'] == true) {
         _loadCurrentTrack(forceImageUpdate: false);
       }
@@ -40,77 +47,104 @@ class MusicStateNotifier extends StateNotifier<MusicState> {
   }
 
   Future<void> refresh({bool forceImageUpdate = false}) async {
+    if (_isDisposed) return;
+    
     state = state.copyWith(isLoading: true, errorMessage: null);
     await _loadCurrentTrack(forceImageUpdate: forceImageUpdate);
   }
 
   void refreshDelayed({bool forceImageUpdate = false}) {
+    if (_isDisposed) return;
+    
     Future.delayed(const Duration(milliseconds: 500), () {
-      _loadCurrentTrack(forceImageUpdate: forceImageUpdate);
+      if (!_isDisposed) {
+        _loadCurrentTrack(forceImageUpdate: forceImageUpdate);
+      }
     });
   }
 
   Future<void> togglePlayPause() async {
+    if (_isDisposed) return;
+    
     await _controller.togglePlayPause();
-    // 즉시 상태 업데이트
     await _loadCurrentTrack(forceImageUpdate: false);
   }
 
   Future<void> nextTrack() async {
+    if (_isDisposed) return;
+    
     await _controller.nextTrack();
-    // 곡 변경 시 이미지 강제 업데이트
     await Future.delayed(const Duration(milliseconds: 800));
-    await _loadCurrentTrack(forceImageUpdate: true);
+    if (!_isDisposed) {
+      await _loadCurrentTrack(forceImageUpdate: true);
+    }
   }
 
   Future<void> previousTrack() async {
+    if (_isDisposed) return;
+    
     await _controller.previousTrack();
-    // 곡 변경 시 이미지 강제 업데이트
     await Future.delayed(const Duration(milliseconds: 800));
-    await _loadCurrentTrack(forceImageUpdate: true);
+    if (!_isDisposed) {
+      await _loadCurrentTrack(forceImageUpdate: true);
+    }
   }
 
   Future<void> seek(double seconds) async {
+    if (_isDisposed) return;
     await _controller.seek(seconds);
   }
 
   Future<void> _loadCurrentTrack({bool forceImageUpdate = false}) async {
+    if (_isDisposed) return;
+    
     try {
       final info = await _controller.getNowPlayingInfo();
+
+      if (_isDisposed) return; // 비동기 작업 후 체크
       
       if (info == null) {
-        // 재시도 로직 추가 (첫 로드 실패 시)
         if (state.isLoading && state.currentTrack == null) {
           await Future.delayed(const Duration(seconds: 1));
+          
+          if (_isDisposed) return;
+          
           final retryInfo = await _controller.getNowPlayingInfo();
-          if (retryInfo != null) {
+          if (retryInfo != null && !_isDisposed) {
             _processTrackInfo(retryInfo, forceImageUpdate);
             return;
           }
         }
-        
-        state = state.copyWith(isLoading: false, currentTrack: null, errorMessage: null);
+
+        if (!_isDisposed) {
+          state = state.copyWith(isLoading: false, currentTrack: null, errorMessage: null);
+        }
         return;
       }
 
-      _processTrackInfo(info, forceImageUpdate);
+      if (!_isDisposed) {
+        _processTrackInfo(info, forceImageUpdate);
+      }
     } catch (e) {
-      debugPrint('Error loading track: $e');
-      state = state.copyWith(isLoading: false, errorMessage: '음악 정보를 불러올 수 없습니다: $e');
+      if (!_isDisposed) {
+        debugPrint('Error loading track: $e');
+        state = state.copyWith(isLoading: false, errorMessage: '음악 정보를 불러올 수 없습니다: $e');
+      }
     }
   }
 
   void _processTrackInfo(Map<String, dynamic> info, bool forceImageUpdate) {
+    if (_isDisposed) return;
+    
     final trackId = '${info['title']}_${info['artist']}';
     Uint8List? cachedThumbnail = state.cachedThumbnail;
     String? cachedTrackId = state.cachedTrackId;
 
-    // 곡이 변경되었거나 강제 업데이트일 때
     if (forceImageUpdate || trackId != cachedTrackId) {
       debugPrint('🎵 Track changed or force update: $trackId');
       cachedTrackId = trackId;
       cachedThumbnail = _extractThumbnail(info['thumbnail']);
-      
+
       if (cachedThumbnail != null) {
         debugPrint('✅ Thumbnail cached: ${cachedThumbnail.length} bytes');
       } else {
@@ -123,13 +157,15 @@ class MusicStateNotifier extends StateNotifier<MusicState> {
       updatedInfo['thumbnail'] = cachedThumbnail;
     }
 
-    state = state.copyWith(
-      isLoading: false,
-      currentTrack: updatedInfo,
-      errorMessage: null,
-      cachedThumbnail: cachedThumbnail,
-      cachedTrackId: cachedTrackId,
-    );
+    if (!_isDisposed) {
+      state = state.copyWith(
+        isLoading: false,
+        currentTrack: updatedInfo,
+        errorMessage: null,
+        cachedThumbnail: cachedThumbnail,
+        cachedTrackId: cachedTrackId,
+      );
+    }
   }
 
   Uint8List? _extractThumbnail(dynamic thumbnail) {
@@ -159,15 +195,18 @@ class MusicStateNotifier extends StateNotifier<MusicState> {
     _musicSubscription?.cancel();
     _musicSubscription = _controller.onMusicInfoChanged.listen(
       (info) {
+        if (_isDisposed) return;
+        
         final trackId = '${info['title']}_${info['artist']}';
         debugPrint('📻 Music change event: $trackId');
-        
+
         if (trackId != state.cachedTrackId) {
           debugPrint('🔄 New track detected, forcing image update');
           _loadCurrentTrack(forceImageUpdate: true);
         } else {
-          // 같은 곡이면 재생 위치만 업데이트
-          state = state.copyWith(currentTrack: info);
+          if (!_isDisposed) {
+            state = state.copyWith(currentTrack: info);
+          }
         }
       },
       onError: (error) {
@@ -178,9 +217,16 @@ class MusicStateNotifier extends StateNotifier<MusicState> {
 
   @override
   void dispose() {
-    debugPrint('🗑️ MusicStateNotifier disposed');
+    debugPrint('🗑️ MusicStateNotifier disposing...');
+    _isDisposed = true; // 가장 먼저 설정
+    
     _updateTimer?.cancel();
+    _updateTimer = null;
+    
     _musicSubscription?.cancel();
+    _musicSubscription = null;
+    
     super.dispose();
+    debugPrint('🗑️ MusicStateNotifier disposed');
   }
 }

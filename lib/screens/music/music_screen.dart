@@ -1,17 +1,189 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:music_app/screens/music/provider/music_provider.dart';
 import 'package:music_app/screens/music/provider/music_state.dart';
 
-class MusicScreen extends ConsumerWidget {
+class MusicScreen extends ConsumerStatefulWidget {
   const MusicScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MusicScreen> createState() => _MusicScreenState();
+}
+
+class _MusicScreenState extends ConsumerState<MusicScreen> with WidgetsBindingObserver {
+  bool _hasCheckedPermission = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _checkAndroidPermission();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // 앱이 다시 활성화될 때 (설정에서 돌아올 때)
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    if (state == AppLifecycleState.resumed && Platform.isAndroid) {
+      // 설정에서 돌아온 후 권한 재확인
+      _recheckPermissionAfterSettings();
+    }
+  }
+
+  Future<void> _recheckPermissionAfterSettings() async {
+    if (!mounted) return;
+
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+
+    final controller = ref.read(musicControllerProvider);
+    final hasPermission = await controller.checkNotificationPermission();
+
+    if (hasPermission && mounted) {
+      debugPrint('✅ Permission granted! Auto-refreshing...');
+      
+      // 권한이 허용되면 즉시 새로고침
+      ref.read(musicStateProvider.notifier).refresh(forceImageUpdate: true);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('권한이 허용되었습니다! 음악 정보를 불러옵니다.'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _checkAndroidPermission() async {
+    if (_hasCheckedPermission || !Platform.isAndroid || !mounted) return;
+    _hasCheckedPermission = true;
+
+    final controller = ref.read(musicControllerProvider);
+    final hasPermission = await controller.checkNotificationPermission();
+
+    debugPrint('🔐 Initial permission check: $hasPermission');
+
+    if (!hasPermission && mounted) {
+      // 권한이 없으면 다이얼로그 표시
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _showPermissionDialog();
+        }
+      });
+    } else if (hasPermission && mounted) {
+      // 권한이 있으면 바로 새로고침
+      ref.read(musicStateProvider.notifier).refresh(forceImageUpdate: true);
+    }
+  }
+
+  void _showPermissionDialog() {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.music_note, color: Colors.deepPurple),
+            SizedBox(width: 8),
+            Text('알림 접근 권한 필요'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '재생 중인 음악 정보를 가져오려면\n알림 접근 권한이 필요합니다.',
+              style: TextStyle(fontSize: 16),
+            ),
+            SizedBox(height: 16),
+            Text(
+              '설정 방법:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            SizedBox(height: 8),
+            Text(
+              '1. "설정 열기" 버튼 클릭\n'
+              '2. "Music App" 찾기\n'
+              '3. 토글 버튼 활성화 ✅',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (mounted) {
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('나중에'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              if (!mounted) return;
+
+              Navigator.pop(context);
+              
+              await ref.read(musicControllerProvider).requestNotificationPermission();
+              
+              // 설정 화면으로 이동 후에는 didChangeAppLifecycleState에서 자동 처리됨
+            },
+            icon: const Icon(Icons.settings),
+            label: const Text('설정 열기'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(musicStateProvider);
 
     if (state.isLoading && state.currentTrack == null) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              Platform.isAndroid
+                  ? '음악 정보를 불러오는 중...'
+                  : '음악 정보를 불러오는 중...',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+            if (Platform.isAndroid) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  if (mounted) {
+                    _showPermissionDialog();
+                  }
+                },
+                child: const Text('권한이 필요한가요?'),
+              ),
+            ],
+          ],
+        ),
+      );
     }
 
     if (state.errorMessage != null) {
@@ -28,9 +200,24 @@ class MusicScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: () => ref.read(musicStateProvider.notifier).refresh(forceImageUpdate: true),
+              onPressed: () {
+                if (mounted) {
+                  ref.read(musicStateProvider.notifier).refresh(forceImageUpdate: true);
+                }
+              },
               child: const Text('다시 시도'),
             ),
+            if (Platform.isAndroid) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  if (mounted) {
+                    _showPermissionDialog();
+                  }
+                },
+                child: const Text('권한 설정'),
+              ),
+            ],
           ],
         ),
       );
@@ -45,12 +232,34 @@ class MusicScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             Text('재생 중인 음악이 없습니다', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
             const SizedBox(height: 8),
-            Text('음악 앱에서 음악을 재생해주세요', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => ref.read(musicStateProvider.notifier).refresh(forceImageUpdate: true),
-              child: const Text('새로고침'),
+            Text(
+              Platform.isAndroid
+                  ? 'Spotify, YouTube Music 등에서\n음악을 재생해주세요'
+                  : 'Apple Music, Spotify 등에서\n음악을 재생해주세요',
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              textAlign: TextAlign.center,
             ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                if (mounted) {
+                  ref.read(musicStateProvider.notifier).refresh(forceImageUpdate: true);
+                }
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('새로고침'),
+            ),
+            if (Platform.isAndroid) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  if (mounted) {
+                    _showPermissionDialog();
+                  }
+                },
+                child: const Text('권한 확인'),
+              ),
+            ],
           ],
         ),
       );
@@ -70,15 +279,32 @@ class MusicScreen extends ConsumerWidget {
             const SizedBox(height: 32),
             _buildControlButtons(context, ref, state),
             const SizedBox(height: 16),
-            // 새로고침 버튼 추가
             TextButton.icon(
-              onPressed: () => ref.read(musicStateProvider.notifier).refresh(forceImageUpdate: true),
+              onPressed: () {
+                if (mounted) {
+                  ref.read(musicStateProvider.notifier).refresh(forceImageUpdate: true);
+                }
+              },
               icon: const Icon(Icons.refresh, size: 20),
-              label: const Text('이미지 새로고침'),
+              label: const Text('새로고침'),
               style: TextButton.styleFrom(
                 foregroundColor: Colors.grey[600],
               ),
             ),
+            if (Platform.isAndroid) ...[
+              TextButton.icon(
+                onPressed: () {
+                  if (mounted) {
+                    _showPermissionDialog();
+                  }
+                },
+                icon: const Icon(Icons.settings, size: 20),
+                label: const Text('권한 설정'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey[600],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -91,7 +317,13 @@ class MusicScreen extends ConsumerWidget {
       height: 280,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
@@ -101,7 +333,6 @@ class MusicScreen extends ConsumerWidget {
   }
 
   Widget _buildThumbnailImage(MusicState state) {
-    // 캐시된 썸네일 사용
     if (state.cachedThumbnail != null && state.cachedThumbnail!.isNotEmpty) {
       return Image.memory(
         state.cachedThumbnail!,
@@ -202,7 +433,10 @@ class MusicScreen extends ConsumerWidget {
         ),
         const SizedBox(width: 20),
         Container(
-          decoration: BoxDecoration(color: Theme.of(context).primaryColor, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+            color: Theme.of(context).primaryColor,
+            shape: BoxShape.circle,
+          ),
           child: IconButton(
             icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
             iconSize: 48,
