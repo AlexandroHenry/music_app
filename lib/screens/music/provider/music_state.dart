@@ -9,7 +9,6 @@ class MusicState {
     this.currentTrack,
     this.cachedThumbnail,
     this.cachedTrackId,
-    this.playbackSpeed = 1.0,
   });
 
   final bool isLoading;
@@ -17,7 +16,6 @@ class MusicState {
   final Map<String, dynamic>? currentTrack;
   final Uint8List? cachedThumbnail;
   final String? cachedTrackId;
-  final double playbackSpeed;
 
   MusicState copyWith({
     bool? isLoading,
@@ -25,7 +23,6 @@ class MusicState {
     Map<String, dynamic>? currentTrack,
     Uint8List? cachedThumbnail,
     String? cachedTrackId,
-    double? playbackSpeed,
   }) {
     return MusicState(
       isLoading: isLoading ?? this.isLoading,
@@ -33,7 +30,6 @@ class MusicState {
       currentTrack: currentTrack ?? this.currentTrack,
       cachedThumbnail: cachedThumbnail ?? this.cachedThumbnail,
       cachedTrackId: cachedTrackId ?? this.cachedTrackId,
-      playbackSpeed: playbackSpeed ?? this.playbackSpeed,
     );
   }
 

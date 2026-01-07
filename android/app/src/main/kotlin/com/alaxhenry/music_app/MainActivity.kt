@@ -68,19 +68,6 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGUMENT", "seconds is required", null)
                     }
                 }
-                "setPlaybackSpeed" -> {
-                    val speed = call.argument<Double>("speed")
-                    if (speed != null) {
-                        val success = setPlaybackSpeed(speed.toFloat())
-                        if (success) {
-                            result.success(true)
-                        } else {
-                            result.error("UNSUPPORTED", "setPlaybackSpeed not supported", null)
-                        }
-                    } else {
-                        result.error("INVALID_ARGUMENT", "speed is required", null)
-                    }
-                }
                 "checkNotificationPermission" -> {
                     val hasPermission = isNotificationListenerEnabled()
                     Log.d(TAG, "🔐 Permission check: $hasPermission")
@@ -264,23 +251,6 @@ class MainActivity : FlutterActivity() {
     private fun seek(positionMs: Long) {
         activeController?.transportControls?.seekTo(positionMs)
         Log.d(TAG, "⏩ Seek to ${positionMs}ms")
-    }
-
-    private fun setPlaybackSpeed(speed: Float): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-            Log.w(TAG, "⚠️ setPlaybackSpeed not supported before Android N")
-            return false
-        }
-
-        val controller = activeController ?: return false
-        return try {
-            controller.transportControls.setPlaybackSpeed(speed)
-            Log.d(TAG, "🎚️ Playback speed set: $speed")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error setting playback speed: ${e.message}")
-            false
-        }
     }
 
     private fun isNotificationListenerEnabled(): Boolean {

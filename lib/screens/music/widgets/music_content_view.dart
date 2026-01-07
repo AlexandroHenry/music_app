@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../provider/music_state.dart';
@@ -15,8 +14,6 @@ class MusicContentView extends StatelessWidget {
     required this.onNext,
     required this.onPrevious,
     required this.onRefresh,
-    required this.playbackSpeed,
-    required this.onPlaybackSpeedSelected,
     required this.showPermissionAction,
     this.onPermissionSettings,
   });
@@ -28,110 +25,212 @@ class MusicContentView extends StatelessWidget {
   final VoidCallback onNext;
   final VoidCallback onPrevious;
   final VoidCallback onRefresh;
-  final double playbackSpeed;
-  final ValueChanged<double> onPlaybackSpeedSelected;
   final bool showPermissionAction;
   final VoidCallback? onPermissionSettings;
 
   @override
   Widget build(BuildContext context) {
+    final resolvedThumbnail = _resolveThumbnail(state);
+
     return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            const SizedBox(height: 20),
-            _AlbumArt(
-              thumbnail: state.cachedThumbnail,
-              currentTime: (state.currentTrack!['currentTime'] as num?)?.toDouble() ?? 0.0,
-              duration: (state.currentTrack!['duration'] as num?)?.toDouble() ?? 0.0,
-              onSeek: onSeek,
-              onSeekEnd: onSeekEnd,
+      child: Column(
+        children: [
+          const SizedBox(height: 20),
+          SizedBox(
+            width: MediaQuery.of(context).size.width,
+            child: _AlbumCarousel(
+              thumbnail: resolvedThumbnail,
               onNext: onNext,
               onPrevious: onPrevious,
             ),
-            const SizedBox(height: 32),
-            _TrackInfo(track: state.currentTrack!),
-            const SizedBox(height: 24),
-            _ProgressBar(
-              track: state.currentTrack!,
-              onSeek: onSeek,
-              onSeekEnd: onSeekEnd,
-            ),
-            const SizedBox(height: 32),
-            _ControlButtons(
-              isPlaying: state.currentTrack!['isPlaying'] == true,
-              onPrevious: onPrevious,
-              onPlayPause: onPlayPause,
-              onNext: onNext,
-            ),
-            const SizedBox(height: 20),
-            _PlaybackSpeedSelector(
-              currentSpeed: playbackSpeed,
-              onSpeedSelected: onPlaybackSpeedSelected,
-            ),
-            const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: onRefresh,
-              icon: const Icon(Icons.refresh, size: 20),
-              label: const Text('새로고침'),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.grey[600],
-              ),
-            ),
-            if (showPermissionAction) ...[
-              TextButton.icon(
-                onPressed: onPermissionSettings,
-                icon: const Icon(Icons.settings, size: 20),
-                label: const Text('권한 설정'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.grey[600],
+          ),
+          const SizedBox(height: 32),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Column(
+              children: [
+                _TrackInfo(track: state.currentTrack!),
+                const SizedBox(height: 24),
+                _ProgressBar(
+                  track: state.currentTrack!,
+                  onSeek: onSeek,
+                  onSeekEnd: onSeekEnd,
                 ),
-              ),
-            ],
-          ],
-        ),
+                const SizedBox(height: 32),
+                _ControlButtons(
+                  isPlaying: state.currentTrack!['isPlaying'] == true,
+                  onPrevious: onPrevious,
+                  onPlayPause: onPlayPause,
+                  onNext: onNext,
+                ),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: onRefresh,
+                  icon: const Icon(Icons.refresh, size: 20),
+                  label: const Text('새로고침'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.grey[600],
+                  ),
+                ),
+                if (showPermissionAction) ...[
+                  TextButton.icon(
+                    onPressed: onPermissionSettings,
+                    icon: const Icon(Icons.settings, size: 20),
+                    label: const Text('권한 설정'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _AlbumArt extends StatefulWidget {
-  const _AlbumArt({
+Uint8List? _resolveThumbnail(MusicState state) {
+  final cached = state.cachedThumbnail;
+  if (cached != null && cached.isNotEmpty) {
+    return cached;
+  }
+
+  final raw = state.currentTrack?['thumbnail'];
+  if (raw is Uint8List) {
+    return raw;
+  }
+  if (raw is List<int>) {
+    return Uint8List.fromList(raw);
+  }
+
+  return null;
+}
+
+class _AlbumCarousel extends StatefulWidget {
+  const _AlbumCarousel({
     required this.thumbnail,
-    required this.currentTime,
-    required this.duration,
-    required this.onSeek,
-    required this.onSeekEnd,
     required this.onNext,
     required this.onPrevious,
   });
 
   final Uint8List? thumbnail;
-  final double currentTime;
-  final double duration;
-  final ValueChanged<double> onSeek;
-  final VoidCallback onSeekEnd;
   final VoidCallback onNext;
   final VoidCallback onPrevious;
 
   @override
-  State<_AlbumArt> createState() => _AlbumArtState();
+  State<_AlbumCarousel> createState() => _AlbumCarouselState();
 }
 
-class _AlbumArtState extends State<_AlbumArt> {
-  static const double _dragSeekFactor = 0.2;
-  static const double _skipThreshold = 120.0;
+class _AlbumCarouselState extends State<_AlbumCarousel> {
+  static const double _viewportFraction = 0.72;
+  static const Duration _snapBackDuration = Duration(milliseconds: 220);
 
-  double _dragDelta = 0.0;
-  double _startTime = 0.0;
-  bool _skipTriggered = false;
+  late final PageController _controller;
+  bool _isAnimatingBack = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController(
+      initialPage: 1,
+      viewportFraction: _viewportFraction,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleSwipe(int index) async {
+    if (_isAnimatingBack || !mounted) {
+      return;
+    }
+
+    if (index == 0) {
+      widget.onPrevious();
+    } else if (index == 2) {
+      widget.onNext();
+    } else {
+      return;
+    }
+
+    _isAnimatingBack = true;
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (!mounted) return;
+
+    await _controller.animateToPage(
+      1,
+      duration: _snapBackDuration,
+      curve: Curves.easeOutCubic,
+    );
+    _isAnimatingBack = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final side = constraints.maxWidth.clamp(0.0, 320.0);
+
+        return SizedBox(
+          height: side,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: 3,
+            onPageChanged: _handleSwipe,
+            itemBuilder: (context, index) {
+              return AnimatedBuilder(
+                animation: _controller,
+                builder: (context, child) {
+                  final page = _controller.hasClients && _controller.position.haveDimensions
+                      ? (_controller.page ?? _controller.initialPage.toDouble())
+                      : _controller.initialPage.toDouble();
+                  final distance = (page - index).abs().clamp(0.0, 1.0);
+                  final scale = 0.86 + (1.0 - distance) * 0.14;
+                  final opacity = 0.55 + (1.0 - distance) * 0.45;
+
+                  return Opacity(
+                    opacity: opacity,
+                    child: Transform.scale(
+                      scale: scale,
+                      child: child,
+                    ),
+                  );
+                },
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: index == 1 ? side : side * 0.84,
+                    child: _AlbumCard(
+                      thumbnail: widget.thumbnail,
+                      label: index == 0 ? '이전곡' : index == 2 ? '다음곡' : null,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AlbumCard extends StatelessWidget {
+  const _AlbumCard({
+    required this.thumbnail,
+    required this.label,
+  });
+
+  final Uint8List? thumbnail;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 280,
-      height: 280,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
@@ -144,39 +243,24 @@ class _AlbumArtState extends State<_AlbumArt> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: GestureDetector(
-          onPanStart: (_) {
-            _dragDelta = 0.0;
-            _startTime = widget.currentTime;
-            _skipTriggered = false;
-          },
-          onPanUpdate: (details) {
-            _dragDelta += details.delta.dx;
-
-            if (_skipTriggered) {
-              return;
-            }
-
-            if (_dragDelta.abs() >= _skipThreshold) {
-              _skipTriggered = true;
-              if (_dragDelta > 0) {
-                widget.onNext();
-              } else {
-                widget.onPrevious();
-              }
-              return;
-            }
-
-            final deltaSeconds = _dragDelta * _dragSeekFactor;
-            final target = (_startTime + deltaSeconds).clamp(0.0, widget.duration > 0 ? widget.duration : 0.0);
-            widget.onSeek(target);
-          },
-          onPanEnd: (_) {
-            if (!_skipTriggered) {
-              widget.onSeekEnd();
-            }
-          },
-          child: _ThumbnailImage(thumbnail: widget.thumbnail),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _ThumbnailImage(thumbnail: thumbnail),
+            if (label != null)
+              Container(
+                color: Colors.black.withOpacity(0.25),
+                alignment: Alignment.center,
+                child: Text(
+                  label!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -349,39 +433,6 @@ class _ControlButtons extends StatelessWidget {
           icon: const Icon(Icons.skip_next),
           iconSize: 48,
           onPressed: onNext,
-        ),
-      ],
-    );
-  }
-}
-
-class _PlaybackSpeedSelector extends StatelessWidget {
-  const _PlaybackSpeedSelector({
-    required this.currentSpeed,
-    required this.onSpeedSelected,
-  });
-
-  final double currentSpeed;
-  final ValueChanged<double> onSpeedSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
-
-    return Column(
-      children: [
-        Text('배속 재생', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final speed in speeds)
-              ChoiceChip(
-                label: Text('${speed}x'),
-                selected: currentSpeed == speed,
-                onSelected: (_) => onSpeedSelected(speed),
-              ),
-          ],
         ),
       ],
     );
